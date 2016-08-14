@@ -1,9 +1,10 @@
 #include "sysfs_cc.h"
 #include "cc.h"
 #include <linux/netdevice.h>
+#include <linux/sysfs.h>
 
 
-static struct ethernet_port_attribute {
+struct ethernet_port_attribute {
     struct attribute attr;
     ssize_t (*show)(struct ethernet_port*, struct ethernet_port_attribute*, char*);
     ssize_t (*store)(struct ethernet_port*, struct ethernet_port_attribute*, const char*, size_t);
@@ -30,14 +31,10 @@ static ssize_t carrier_store(struct ethernet_port *port, struct ethernet_port_at
 }
 
 
-static struct ethernet_port_attribute carrier_attribute =
-    __ATTR(carrier, S_IWUSR | S_IRWXO, carrier_show, carrier_store);
+static struct ethernet_port_attribute carrier_attribute = __ATTR_RW(carrier);
 
 
-static struct attribute *ethernet_port_default_attrs[] = {
-    &carrier_attribute.attr,
-    NULL,
-};
+static struct attribute *ethernet_port_default_attrs[] = { &carrier_attribute.attr, NULL };
 
 
 static ssize_t ethernet_port_attr_show(struct kobject *kobj, struct attribute *attr, char *buf)
@@ -94,11 +91,11 @@ static ssize_t update_interfaces_show(struct kobject *kobj, struct kobj_attribut
 }
 
 
-static struct kobj_attribute update_interfaces_attribute =
-    __ATTR(update_interfaces, S_IRUSR | S_IROTH, update_interfaces_show, NULL);
+static struct kobj_attribute update_interfaces_attribute = __ATTR_RO(update_interfaces);
 
 
 static struct kset *ethernet_ports;
+
 
 int create_module_dir(void)
 {
@@ -124,7 +121,7 @@ void destroy_module_dir(void)
 
 int create_ethernet_port_dir(struct ethernet_port *port)
 {
-    if (!(port && port->netdev)) {
+    if (!port || !port->netdev) {
         return -EINVAL;
     }
 
@@ -132,7 +129,7 @@ int create_ethernet_port_dir(struct ethernet_port *port)
 
     if (kobject_init_and_add(&port->kobj, &ethernet_port_ktype, NULL, "%s", port->netdev->name)) {
         destroy_ethernet_port_dir(port);
-        return -ENOMEM;
+        return -EINVAL;
     }
 
     kobject_uevent(&port->kobj, KOBJ_ADD);

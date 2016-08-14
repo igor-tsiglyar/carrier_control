@@ -1,7 +1,7 @@
 obj-m += carrier_control.o
-carrier_control-objs := sysfs_cc.o cc_main.o
+carrier_control-objs := sysfs_cc.o e1000_cc.o cc_main.o
 
-KDIR=/usr/src/kernels/3.10.0-327.28.2.el7.x86_64/
+KDIR=/usr/src/linux-headers-4.4.0-34-generic
 
 cc:
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) modules
