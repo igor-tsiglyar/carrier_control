@@ -4,12 +4,10 @@
 #include <linux/kobject.h>
 #include <linux/interrupt.h>
 
-struct net_device;
 struct ethernet_port;
 
 struct ethernet_port_fns {
     bool (*action_filter)(void*, struct ethernet_port*);
-    void (*init_variant_opaque)(struct ethernet_port*);
 
     void (*hook_before_carrier_off)(struct ethernet_port*);
     void (*hook_before_carrier_on)(struct ethernet_port*);
@@ -30,7 +28,6 @@ struct ethernet_port {
 
     struct net_device *netdev;
     struct irq_context context;
-    void *variant_opaque;
 
     struct ethernet_port_fns *fns;
 

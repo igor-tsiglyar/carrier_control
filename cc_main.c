@@ -54,12 +54,6 @@ static bool default_action_filter(void *action_dev_id, struct ethernet_port *por
 }
 
 
-static void default_init_variant_opaque(struct ethernet_port *port)
-{
-    port->variant_opaque = NULL;
-}
-
-
 enum ethernet_port_variants {
     unknown = 0,
     e1000,
@@ -106,22 +100,18 @@ static int ethernet_port_variant(struct ethernet_port *port)
 static struct ethernet_port_fns ethernet_port_variant_fns[] = {
     {
         default_action_filter,
-        default_init_variant_opaque,
         NULL,
         NULL },
     {
         default_action_filter,
-        e1000_init_variant_opaque,
         e1000_hook_before_carrier_off,
         e1000_hook_before_carrier_on },
     {
         bnx2x_action_filter,
-        default_init_variant_opaque,
         NULL,
         NULL },
     {
         tg3_action_filter,
-        default_init_variant_opaque,
         NULL,
         NULL }
 };
@@ -191,7 +181,6 @@ static void alloc_ethernet_port(struct net_device *netdev)
 
     port->netdev = netdev;
     port->fns = &ethernet_port_variant_fns[ethernet_port_variant(port)];
-    port->fns->init_variant_opaque(port);
 
     if (save_irq_context(port) || create_ethernet_port_dir(port)) {
         kfree(port);

@@ -3,8 +3,6 @@
 
 struct ethernet_port;
 
-void e1000_init_variant_opaque(struct ethernet_port *port);
-
 void e1000_hook_before_carrier_off(struct ethernet_port *port);
 
 void e1000_hook_before_carrier_on(struct ethernet_port *port);
