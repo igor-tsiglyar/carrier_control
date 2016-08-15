@@ -116,9 +116,15 @@ static void alloc_ethernet_port(struct net_device *netdev)
     for (irq = 0; irq < NR_IRQS; ++irq) {
         struct irq_desc *desc = irq_to_desc(irq);
 
-        if (desc && desc->action && !strcmp(desc->action->name, netdev->name)) {
-            port->irq = irq;
-            break;
+        if (desc && port->irq < 0) {
+            struct irqaction * action;
+
+            for (action = desc->action; action != NULL; action = action->next) {
+                if (!strcmp(action->name, netdev->name)) {
+                    port->irq = irq;
+                    break;
+                }
+            }
         }
     }
 
