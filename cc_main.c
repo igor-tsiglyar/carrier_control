@@ -5,11 +5,21 @@
 #include "sysfs_cc.h"
 #include "cc.h"
 #include "e1000_cc.h"
+#include "bnx2x_cc.h"
+#include "tg3_cc.h"
+
 
 void carrier_on(struct ethernet_port *port)
 {
     if (!netif_carrier_ok(port->netdev)) {
-        enable_irq(port->irq);
+        struct irq_context *context;
+
+        list_for_each_entry(context, &port->context.list, list) {
+            if (request_irq(context->irq, context->handler, context->flags,
+                            context->dev_name, context->dev_id)) {
+                return;
+            }
+        }
 
         if (port->fns->hook_before_carrier_on) {
             port->fns->hook_before_carrier_on(port);
@@ -23,7 +33,11 @@ void carrier_on(struct ethernet_port *port)
 void carrier_off(struct ethernet_port *port)
 {
     if (netif_carrier_ok(port->netdev)) {
-        disable_irq(port->irq);
+        struct irq_context *context;
+
+        list_for_each_entry(context, &port->context.list, list) {
+            free_irq(context->irq, context->dev_id);
+        }
 
         if (port->fns->hook_before_carrier_off) {
             port->fns->hook_before_carrier_off(port);
@@ -31,6 +45,12 @@ void carrier_off(struct ethernet_port *port)
 
         netif_carrier_off(port->netdev);
     }
+}
+
+
+static bool default_action_filter(void *action_dev_id, struct ethernet_port *port)
+{
+    return action_dev_id == port->netdev;
 }
 
 
@@ -42,7 +62,9 @@ static void default_init_variant_opaque(struct ethernet_port *port)
 
 enum ethernet_port_variants {
     unknown = 0,
-    e1000
+    e1000,
+    bnx2x,
+    tg3
 };
 
 
@@ -72,6 +94,10 @@ static int ethernet_port_variant(struct ethernet_port *port)
 
     if (!strcmp(driver_name, "e1000")) {
         return e1000;
+    } else if (!strcmp(driver_name, "bnx2x")) {
+        return bnx2x;
+    } else if (!strcmp(driver_name, "tg3")) {
+        return tg3;
     }
 
     return unknown;
@@ -79,23 +105,79 @@ static int ethernet_port_variant(struct ethernet_port *port)
 
 static struct ethernet_port_fns ethernet_port_variant_fns[] = {
     {
+        default_action_filter,
         default_init_variant_opaque,
         NULL,
         NULL },
     {
+        default_action_filter,
         e1000_init_variant_opaque,
         e1000_hook_before_carrier_off,
-        e1000_hook_before_carrier_on }
+        e1000_hook_before_carrier_on },
+    {
+        bnx2x_action_filter,
+        default_init_variant_opaque,
+        NULL,
+        NULL },
+    {
+        tg3_action_filter,
+        default_init_variant_opaque,
+        NULL,
+        NULL }
 };
 
 
 static struct ethernet_port ethernet_ports;
 
 
+static int save_irq_context(struct ethernet_port *port)
+{
+    unsigned int irq;
+
+    INIT_LIST_HEAD(&port->context.list);
+
+    for (irq = 0; irq < NR_IRQS; ++irq) {
+        struct irq_desc *desc = irq_to_desc(irq);
+
+        if (desc) {
+            struct irqaction *action;
+
+            for (action = desc->action; action != NULL; action = action->next) {
+                if (port->fns->action_filter(action->dev_id, port)) {
+                    struct irq_context *context = kzalloc(sizeof(struct irq_context), GFP_KERNEL);
+
+                    if (!context) {
+                        return -ENOMEM;
+                    }
+
+                    context->irq = irq;
+                    context->handler = action->handler;
+                    context->flags = action->flags;
+                    context->dev_name = kzalloc(strlen(action->name) + 1, GFP_KERNEL);
+
+                    if (!context->dev_name) {
+                        kfree(context);
+                        return -ENOMEM;
+                    }
+
+                    strcpy(context->dev_name, action->name);
+                    context->dev_id = action->dev_id;
+
+                    list_add_tail(&context->list, &port->context.list);
+
+                    break;
+                }
+            }
+        }
+    }
+
+    return !list_empty(&port->context.list);
+}
+
+
 static void alloc_ethernet_port(struct net_device *netdev)
 {
     struct ethernet_port *port = NULL;
-    unsigned int irq;
 
     if (!netdev) {
         return;
@@ -108,32 +190,14 @@ static void alloc_ethernet_port(struct net_device *netdev)
     }
 
     port->netdev = netdev;
-    port->has_carrier = netif_carrier_ok(netdev);
-    port->irq = -1;
     port->fns = &ethernet_port_variant_fns[ethernet_port_variant(port)];
     port->fns->init_variant_opaque(port);
 
-    for (irq = 0; irq < NR_IRQS; ++irq) {
-        struct irq_desc *desc = irq_to_desc(irq);
-
-        if (desc && port->irq < 0) {
-            struct irqaction * action;
-
-            for (action = desc->action; action != NULL; action = action->next) {
-                if (!strcmp(action->name, netdev->name)) {
-                    port->irq = irq;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (port->irq < 0 || create_ethernet_port_dir(port) > 0) {
+    if (save_irq_context(port) || create_ethernet_port_dir(port)) {
         kfree(port);
         return;
     }
 
-    INIT_LIST_HEAD(&port->list);
     list_add_tail(&port->list, &ethernet_ports.list);
 }
 
@@ -141,16 +205,19 @@ static void alloc_ethernet_port(struct net_device *netdev)
 void create_ethernet_ports(void)
 {
     struct net_device *dev;
+    static bool first_time = true;
 
     INIT_LIST_HEAD(&ethernet_ports.list);
 
     read_lock(&dev_base_lock);
     for_each_netdev(&init_net, dev) {
-        if (strcmp(dev->name, "lo")) {
+        if (strcmp(dev->name, "lo") && (!first_time || netif_carrier_ok(dev))) {
             alloc_ethernet_port(dev);
         }
     }
     read_unlock(&dev_base_lock);
+
+    first_time = false;
 }
 
 
@@ -159,7 +226,15 @@ void destroy_ethernet_ports(void)
     struct ethernet_port *port, *aux;
 
     list_for_each_entry_safe(port, aux, &ethernet_ports.list, list) {
+        struct irq_context *context, *aux;
+
         list_del(&port->list);
+
+        list_for_each_entry_safe(context, aux, &port->context.list, list) {
+            kfree(context->dev_name);
+            kfree(context);
+        }
+
         destroy_ethernet_port_dir(port);
     }
 }

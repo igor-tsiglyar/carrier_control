@@ -2,28 +2,39 @@
 #define _CC_H
 
 #include <linux/kobject.h>
+#include <linux/interrupt.h>
 
 struct net_device;
 struct ethernet_port;
 
 struct ethernet_port_fns {
+    bool (*action_filter)(void*, struct ethernet_port*);
     void (*init_variant_opaque)(struct ethernet_port*);
 
     void (*hook_before_carrier_off)(struct ethernet_port*);
     void (*hook_before_carrier_on)(struct ethernet_port*);
 };
 
-struct ethernet_port {
-    struct kobject kobj;
-    struct net_device *netdev;
-
-    int has_carrier;
-    int irq;
+struct irq_context {
+    unsigned int irq;
+    irq_handler_t handler;
+    unsigned long flags;
+    char *dev_name;
+    void *dev_id;
 
     struct list_head list;
+};
 
+struct ethernet_port {
+    struct kobject kobj;
+
+    struct net_device *netdev;
+    struct irq_context context;
     void *variant_opaque;
+
     struct ethernet_port_fns *fns;
+
+    struct list_head list;
 };
 
 void carrier_off(struct ethernet_port *port);

@@ -19,11 +19,13 @@ static ssize_t carrier_show(struct ethernet_port *port, struct ethernet_port_att
 
 static ssize_t carrier_store(struct ethernet_port *port, struct ethernet_port_attribute *attr, const char *buf, size_t count)
 {
-    sscanf(buf, "%d", &port->has_carrier);
+    int carrier;
 
-    if (port->has_carrier == 1) {
+    sscanf(buf, "%d", &carrier);
+
+    if (carrier == 1) {
         carrier_on(port);
-    } else if (port->has_carrier == 0) {
+    } else if (carrier == 0) {
         carrier_off(port);
     }
 
