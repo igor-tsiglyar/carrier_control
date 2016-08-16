@@ -17,7 +17,17 @@ void carrier_on(struct ethernet_port *port)
         list_for_each_entry(context, &port->context.list, list) {
             if (request_irq(context->irq, context->handler, context->flags,
                             context->dev_name, context->dev_id)) {
-                return;
+                struct irq_context *abort;
+
+                pr_err("%s failed to sign on %u irq", context->dev_name, context->irq);
+
+                list_for_each_entry(abort, &port->context.list, list) {
+                    free_irq(abort->irq, abort->dev_id);
+
+                    if (abort->dev_id == context->dev_id) {
+                        return;
+                    }
+                }
             }
         }
 
@@ -86,6 +96,8 @@ static int ethernet_port_variant(struct ethernet_port *port)
 {
     const char *driver_name = cc_netdev_drivername(port->netdev);
 
+    pr_info("%s drivername is %s", port->netdev->name, driver_name);
+
     if (!strcmp(driver_name, "e1000")) {
         return e1000;
     } else if (!strcmp(driver_name, "bnx2x")) {
@@ -112,8 +124,8 @@ static struct ethernet_port_fns ethernet_port_variant_fns[] = {
         NULL },
     {
         tg3_action_filter,
-        NULL,
-        NULL }
+        tg3_hook_before_carrier_off,
+        tg3_hook_before_carrier_on }
 };
 
 
@@ -123,6 +135,7 @@ static struct ethernet_port ethernet_ports;
 static int save_irq_context(struct ethernet_port *port)
 {
     unsigned int irq;
+    int rc;
 
     INIT_LIST_HEAD(&port->context.list);
 
@@ -137,6 +150,7 @@ static int save_irq_context(struct ethernet_port *port)
                     struct irq_context *context = kzalloc(sizeof(struct irq_context), GFP_KERNEL);
 
                     if (!context) {
+                        pr_err("Cannot allocate irq_context for %s", port->netdev->name);
                         return -ENOMEM;
                     }
 
@@ -146,6 +160,7 @@ static int save_irq_context(struct ethernet_port *port)
                     context->dev_name = kzalloc(strlen(action->name) + 1, GFP_KERNEL);
 
                     if (!context->dev_name) {
+                        pr_err("Cannot initialize irq_context for %s", port->netdev->name);
                         kfree(context);
                         return -ENOMEM;
                     }
@@ -161,7 +176,13 @@ static int save_irq_context(struct ethernet_port *port)
         }
     }
 
-    return !list_empty(&port->context.list);
+    rc = list_empty(&port->context.list);
+
+    if (rc) {
+        pr_notice("%s isn't signed on any irq", port->netdev->name);
+    }
+
+    return rc;
 }
 
 
@@ -176,6 +197,7 @@ static void alloc_ethernet_port(struct net_device *netdev)
     port = kzalloc(sizeof(struct ethernet_port), GFP_KERNEL);
 
     if (!port) {
+        pr_err("Cannot allocate ethernet_port for %s", netdev->name);
         return;
     }
 
@@ -200,7 +222,9 @@ void create_ethernet_ports(void)
 
     read_lock(&dev_base_lock);
     for_each_netdev(&init_net, dev) {
-        if (strcmp(dev->name, "lo") && (!first_time || netif_carrier_ok(dev))) {
+        if (first_time && !netif_carrier_ok(dev)) {
+            pr_notice("%s has no-carrier on initialization", dev->name);
+        } else if (strcmp(dev->name, "lo")) {
             alloc_ethernet_port(dev);
         }
     }

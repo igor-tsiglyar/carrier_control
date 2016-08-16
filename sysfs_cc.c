@@ -27,6 +27,8 @@ static ssize_t carrier_store(struct ethernet_port *port, struct ethernet_port_at
         carrier_on(port);
     } else if (carrier == 0) {
         carrier_off(port);
+    } else {
+        pr_notice("Unknown carrier value: %d", carrier);
     }
 
     return count;
@@ -104,10 +106,12 @@ int create_module_dir(void)
     ethernet_ports = kset_create_and_add("carrier_control", NULL, kernel_kobj);
 
     if (!ethernet_ports) {
+        pr_err("Cannon create /sys/carrier_control directory");
         return -ENOMEM;
     }
 
     if (sysfs_create_file(&ethernet_ports->kobj, &update_interfaces_attribute.attr)) {
+        pr_err("Cannon create /sys/carrier_control/update_attributes file");
         kset_unregister(ethernet_ports);
         return -EINVAL;
     }
@@ -130,6 +134,7 @@ int create_ethernet_port_dir(struct ethernet_port *port)
     port->kobj.kset = ethernet_ports;
 
     if (kobject_init_and_add(&port->kobj, &ethernet_port_ktype, NULL, "%s", port->netdev->name)) {
+        pr_err("Cannon carrier file for %s", port->netdev->name);
         destroy_ethernet_port_dir(port);
         return -EINVAL;
     }
