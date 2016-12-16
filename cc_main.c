@@ -87,6 +87,42 @@ void destroy_ethernet_ports(void)
 }
 
 
+bool should_drop_packet(const struct net_device *netdev)
+{
+    struct ethernet_port *port;
+
+    list_for_each_entry(port, &ethernet_ports.list, list) {
+        if (port->netdev == netdev) {
+            unsigned char rand;
+
+            get_random_bytes(&rand, sizeof(char));
+
+            return ((int) rand) % 100 < port->packet_drop_rate;
+        }
+    }
+
+    return false;
+}
+
+
+bool should_corrupt_bit(const struct net_device *netdev)
+{
+    struct ethernet_port *port;
+
+    list_for_each_entry(port, &ethernet_ports.list, list) {
+        if (port->netdev == netdev) {
+            unsigned char rand;
+
+            get_random_bytes(&rand, sizeof(char));
+
+            return ((int) rand) % 100 < port->bit_corrupt_rate;
+        }
+    }
+
+    return false;
+}
+
+
 static int __init carrier_control_init(void)
 {
     int rc = create_module_dir();
@@ -97,7 +133,7 @@ static int __init carrier_control_init(void)
 
     create_ethernet_ports();
 
-    //init_hooks();
+    init_hooks();
 
     return 0;
 }
@@ -115,7 +151,7 @@ static void __exit carrier_control_exit(void)
 
     destroy_module_dir();
 
-    //destroy_hooks();
+    destroy_hooks();
 }
 
 

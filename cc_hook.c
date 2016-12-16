@@ -1,6 +1,8 @@
 #include "cc_hook.h"
+#include "cc.h"
 #include <linux/netdevice.h>
 #include <linux/netfilter_ipv4.h>
+#include <linux/ip.h>
 
 
 static unsigned int
@@ -8,7 +10,7 @@ packet_loss_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
                  const struct net_device *in, const struct net_device *out,
                  const struct nf_hook_state *state)
 {
-    return NF_ACCEPT;
+    return should_drop_packet(out) ? NF_DROP : NF_ACCEPT;
 }
 
 
@@ -17,6 +19,20 @@ packet_corrupt_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
                     const struct net_device *in, const struct net_device *out,
                     const struct nf_hook_state *state)
 {
+    struct iphdr *ip_header = (struct iphdr *) skb_network_header(skb);
+
+    if (ip_header->protocol == 17 && skb_make_writable(skb, skb->len)) {
+        int byte_idx, bit_idx;
+
+        for (byte_idx = 0; byte_idx < skb->len; ++byte_idx) {
+            for (bit_idx = 0; bit_idx < 8; ++bit_idx) {
+                if (should_corrupt_bit(in)) {
+                    skb->data[byte_idx] ^= 1 << bit_idx;
+                }
+            }
+        }
+    }
+
     return NF_ACCEPT;
 }
 

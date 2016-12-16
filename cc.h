@@ -8,6 +8,10 @@ struct ethernet_port {
 
     struct net_device *netdev;
 
+    int packet_drop_rate;
+
+    int bit_corrupt_rate;
+
     struct list_head list;
 };
 
@@ -18,5 +22,9 @@ void carrier_on(struct ethernet_port *port);
 void create_ethernet_ports(void);
 
 void destroy_ethernet_ports(void);
+
+bool should_drop_packet(const struct net_device *netdev);
+
+bool should_corrupt_bit(const struct net_device *netdev);
 
 #endif
