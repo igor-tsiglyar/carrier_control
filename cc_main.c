@@ -1,6 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/netfilter_ipv4.h>
 #include "cc_sysfs.h"
 #include "cc_hook.h"
 #include "cc.h"
@@ -42,7 +43,14 @@ static void alloc_ethernet_port(struct net_device *netdev)
 
     port->netdev = netdev;
 
+    if (create_ethernet_port_dir(port)) {
+        kfree(port);
+        return;
+    }
+
     list_add_tail(&port->list, &ethernet_ports.list);
+
+    pr_info("port %s is created", netdev->name);
 }
 
 
@@ -72,9 +80,9 @@ void destroy_ethernet_ports(void)
     struct ethernet_port *port, *aux;
 
     list_for_each_entry_safe(port, aux, &ethernet_ports.list, list) {
-        list_del(&port->list);
-
         destroy_ethernet_port_dir(port);
+
+        list_del(&port->list);
     }
 }
 
