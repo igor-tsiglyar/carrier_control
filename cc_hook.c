@@ -3,6 +3,7 @@
 #include <linux/netdevice.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/ip.h>
+#include <linux/udp.h>
 
 
 static unsigned int
@@ -19,15 +20,17 @@ packet_corrupt_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
                     const struct net_device *in, const struct net_device *out,
                     const struct nf_hook_state *state)
 {
-    struct iphdr *ip_header = (struct iphdr *) skb_network_header(skb);
+    struct iphdr *ip_header = ip_hdr(skb);
 
     if (ip_header->protocol == 17 && skb_make_writable(skb, skb->len)) {
-        int byte_idx, bit_idx;
+        long int offset = 4 * ip_header->ihl + 8;
+        long int len = skb->len - offset - 1;
+        long int byte_idx, bit_idx;
 
-        for (byte_idx = 0; byte_idx < skb->len; ++byte_idx) {
+        for (byte_idx = 0; byte_idx < len; ++byte_idx) {
             for (bit_idx = 0; bit_idx < 8; ++bit_idx) {
                 if (should_corrupt_bit(in)) {
-                    skb->data[byte_idx] ^= 1 << bit_idx;
+                    skb->data[offset + byte_idx] ^= 1 << bit_idx;
                 }
             }
         }
