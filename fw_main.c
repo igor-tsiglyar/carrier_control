@@ -2,25 +2,9 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/netfilter_ipv4.h>
-#include "cc_sysfs.h"
-#include "cc_hook.h"
-#include "cc.h"
-
-
-void carrier_on(struct ethernet_port *port)
-{
-    if (!netif_carrier_ok(port->netdev)) {
-        netif_carrier_on(port->netdev);
-    }
-}
-
-
-void carrier_off(struct ethernet_port *port)
-{
-    if (netif_carrier_ok(port->netdev)) {
-        netif_carrier_off(port->netdev);
-    }
-}
+#include "fw_sysfs.h"
+#include "fw_hook.h"
+#include "fw.h"
 
 
 static struct ethernet_port ethernet_ports;
@@ -57,21 +41,16 @@ static void alloc_ethernet_port(struct net_device *netdev)
 void create_ethernet_ports(void)
 {
     struct net_device *dev;
-    static bool first_time = true;
 
     INIT_LIST_HEAD(&ethernet_ports.list);
 
     read_lock(&dev_base_lock);
     for_each_netdev(&init_net, dev) {
-        if (first_time && !netif_carrier_ok(dev)) {
-            pr_notice("%s has no-carrier on initialization", dev->name);
-        } else if (strcmp(dev->name, "lo")) {
+        if (strcmp(dev->name, "lo")) {
             alloc_ethernet_port(dev);
         }
     }
     read_unlock(&dev_base_lock);
-
-    first_time = false;
 }
 
 
@@ -87,17 +66,13 @@ void destroy_ethernet_ports(void)
 }
 
 
-bool should_drop_packet(const struct net_device *netdev)
+bool should_forbid_udp_packet(const struct net_device *netdev, uint16_t udp_port)
 {
     struct ethernet_port *port;
 
     list_for_each_entry(port, &ethernet_ports.list, list) {
         if (port->netdev == netdev) {
-            unsigned char rand;
-
-            get_random_bytes(&rand, sizeof(char));
-
-            return ((int) rand) % 100 < port->packet_drop_rate;
+            return htons(port->udp) == udp_port;
         }
     }
 
@@ -105,17 +80,13 @@ bool should_drop_packet(const struct net_device *netdev)
 }
 
 
-bool should_corrupt_bit(const struct net_device *netdev)
+bool should_forbid_tcp_packet(const struct net_device *netdev, uint16_t tcp_port)
 {
     struct ethernet_port *port;
 
     list_for_each_entry(port, &ethernet_ports.list, list) {
         if (port->netdev == netdev) {
-            unsigned char rand;
-
-            get_random_bytes(&rand, sizeof(char));
-
-            return ((int) rand) % 100 < port->bit_corrupt_rate;
+            return htons(port->tcp) == tcp_port;
         }
     }
 
@@ -141,12 +112,6 @@ static int __init carrier_control_init(void)
 
 static void __exit carrier_control_exit(void)
 {
-    struct ethernet_port *port;
-
-    list_for_each_entry(port, &ethernet_ports.list, list) {
-        carrier_on(port);
-    }
-
     destroy_ethernet_ports();
 
     destroy_module_dir();

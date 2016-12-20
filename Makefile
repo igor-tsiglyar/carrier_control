@@ -1,7 +1,7 @@
-obj-m += carrier_control.o
-carrier_control-objs := cc_sysfs.o cc_hook.o cc_main.o
+obj-m += firewall.o
+firewall-objs := fw_sysfs.o fw_hook.o fw_main.o
 
-cc:
+fw:
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) modules
 
 clean:

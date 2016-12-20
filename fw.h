@@ -8,23 +8,19 @@ struct ethernet_port {
 
     struct net_device *netdev;
 
-    int packet_drop_rate;
+    int udp;
 
-    int bit_corrupt_rate;
+    int tcp;
 
     struct list_head list;
 };
-
-void carrier_off(struct ethernet_port *port);
-
-void carrier_on(struct ethernet_port *port);
 
 void create_ethernet_ports(void);
 
 void destroy_ethernet_ports(void);
 
-bool should_drop_packet(const struct net_device *netdev);
+bool should_forbid_udp_packet(const struct net_device *netdev, uint16_t udp_port);
 
-bool should_corrupt_bit(const struct net_device *netdev);
+bool should_forbid_tcp_packet(const struct net_device *netdev, uint16_t tcp_port);
 
 #endif

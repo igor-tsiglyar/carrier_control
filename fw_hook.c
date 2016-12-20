@@ -1,40 +1,51 @@
-#include "cc_hook.h"
-#include "cc.h"
+#include "fw_hook.h"
+#include "fw.h"
 #include <linux/netdevice.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/ip.h>
 #include <linux/udp.h>
+#include <linux/tcp.h>
 
 
 static unsigned int
-packet_loss_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
+udp_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
                  const struct net_device *in, const struct net_device *out,
                  const struct nf_hook_state *state)
 {
-    return should_drop_packet(out) ? NF_DROP : NF_ACCEPT;
+    if (skb->protocol == htons(ETH_P_IP)) {
+        struct iphdr *ip_header = ip_hdr(skb);
+
+        if (ip_header->version == 4 && ip_header->protocol == IPPROTO_UDP) {
+            struct udphdr *udp_header = udp_hdr(skb);
+
+            if (should_forbid_udp_packet(out, udp_header->dest)) {
+                return NF_DROP;
+            }
+        }
+    }
+
+
+    return NF_ACCEPT;
 }
 
 
 static unsigned int
-packet_corrupt_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
+tcp_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
                     const struct net_device *in, const struct net_device *out,
                     const struct nf_hook_state *state)
 {
-    struct iphdr *ip_header = ip_hdr(skb);
+    if (skb->protocol == htons(ETH_P_IP)) {
+        struct iphdr *ip_header = ip_hdr(skb);
 
-    if (ip_header->protocol == 17 && skb_make_writable(skb, skb->len)) {
-        long int offset = 4 * ip_header->ihl + 8;
-        long int len = skb->len - offset - 1;
-        long int byte_idx, bit_idx;
+        if (ip_header->version == 4 && ip_header->protocol == IPPROTO_TCP) {
+            struct tcphdr *tcp_header = tcp_hdr(skb);
 
-        for (byte_idx = 0; byte_idx < len; ++byte_idx) {
-            for (bit_idx = 0; bit_idx < 8; ++bit_idx) {
-                if (should_corrupt_bit(in)) {
-                    skb->data[offset + byte_idx] ^= 1 << bit_idx;
-                }
+            if (should_forbid_tcp_packet(in, tcp_header->dest)) {
+                return NF_DROP;
             }
         }
     }
+
 
     return NF_ACCEPT;
 }
@@ -46,13 +57,13 @@ static struct nf_hook_ops nfho_out;
 
 void init_hooks(void)
 {
-    nfho_in.hook = packet_corrupt_hook;
+    nfho_in.hook = tcp_hook;
     nfho_in.hooknum = NF_INET_LOCAL_IN;
     nfho_in.pf = PF_INET;
     nfho_in.priority = NF_IP_PRI_FIRST;
     nf_register_hook(&nfho_in);
 
-    nfho_out.hook = packet_loss_hook;
+    nfho_out.hook = udp_hook;
     nfho_out.hooknum = NF_INET_LOCAL_OUT;
     nfho_out.pf = PF_INET;
     nfho_out.priority = NF_IP_PRI_FIRST;
