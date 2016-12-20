@@ -18,7 +18,7 @@ udp_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
         if (ip_header->version == 4 && ip_header->protocol == IPPROTO_UDP) {
             struct udphdr *udp_header = udp_hdr(skb);
 
-            if (should_forbid_udp_packet(out, udp_header->dest)) {
+            if (should_forbid_udp_packet(out, udp_header->source)) {
                 return NF_DROP;
             }
         }
